@@ -1,0 +1,121 @@
+import pickle
+import numpy as np 
+with open("train_qa.txt","rb") as fp:
+    train_data = pickle.load(fp)
+train_data
+with open ("test_qa.txt","rb") as fp:
+    test_data = pickle.load(fp)
+test_data
+vocab = set()
+all_data = train_data + test_data
+for story , question , answer in all_data :
+    vocab = vocab.union(set(story))
+    vocab = vocab.union(set(question))
+vocab.add ('yes')
+vocab.add('no')
+vocab
+vocab_len=len(vocab) + 1
+max_story_len = max([len(data[0]) for data in all_data])
+max_story_len
+max_ques_len = max([len(data[1]) for data in all_data])
+max_ques_len
+!pip install tensorFlow
+!pip install keras
+from keras.preprocessing.sequence import pad_sequences
+from keras.preprocessing.text import Tokenizer
+tokenizer = Tokenizer(filters={})
+tokenizer.fit_on_texts(vocab)
+tokenizer.word_index
+train_story_text = []
+train_ques_text = []
+train_ans_text = []
+for story,ques,ans in train_data:
+    train_story_text.append(story)
+    train_ques_text.append(ques)
+ train_story_seq =  tokenizer.texts_to_sequences(train_story_text) 
+train_story_seq
+def Vectorised_Data(data, word_index = tokenizer.word_index,max_story_len = max_story_len ,max_ques_len=max_ques_len):
+    X= []
+    XQ =[]
+    Y = []
+    for story,ques,ans in data:
+        x = [word_index[word.lower()] for word in story]
+        xq = [word_index[word.lower()] for word in ques]
+        y = np.zeros(len(word_index)+1)
+        y[word_index[ans]] = 1
+            
+        X.append(x)
+        XQ.append(xq)
+        Y.append(y)
+    return (pad_sequences(X,max_story_len)),(pad_sequences(XQ,max_ques_len)),(np.array(Y))
+
+inputs_train , Queries_train , ans_train = Vectorised_Data(train_data)
+inputs_train
+inputs_test , Queries_test , ans_test = Vectorised_Data(test_data)
+from keras.models import Sequential , Model
+from keras.layers import Embedding
+from keras.layers import Input , Activation , Dense , Permute , Dropout , concatenate , add ,dot , LSTM
+input_sequence = Input((max_story_len,))
+ques_sequence = Input((max_ques_len,))
+input_encoder_m = Sequential()
+input_encoder_m.add (Embedding(input_dim = vocab_len, output_dim = 64))
+input_encoder_m.add(Dropout(0.2))
+input_encoder_c = Sequential()
+input_encoder_c.add (Embedding(input_dim = vocab_len, output_dim = max_ques_len))
+input_encoder_c.add(Dropout(0.2))
+ques_encoder = Sequential()
+ques_encoder.add (Embedding(input_dim = vocab_len, input_length = max_ques_len ,output_dim = 64))
+ques_encoder.add(Dropout(0.2))
+input_encoded_m = input_encoder_m(input_sequence)
+input_encoded_c = input_encoder_c(input_sequence)
+ques_encoded = ques_encoder(ques_sequence)
+match = dot([input_encoded_m,ques_encoded] , axes =(2,2))
+match = Activation('softmax')(match)
+response = add([match,input_encoded_c])
+response = Permute((2,1))(response)
+answer = concatenate([response,ques_encoded])
+answer = LSTM(32)(answer)
+answer = Dropout(0.5)(answer)
+answer = Dense(vocab_len)(answer)
+answer = Activation('softmax')(answer)
+model = Model([input_sequence,ques_sequence],answer)
+model.compile(optimizer = 'rmsprop',loss = 'categorical_crossentropy', metrics = ['accuracy'])
+model.summary()
+history = model.fit([inputs_train,Queries_train],ans_train, validation_data =([inputs_test,Queries_test],ans_test), batch_size =32,epochs=35)
+import matplotlib.pyplot as plt 
+plt.plot(history.history['accuracy'])
+plt.plot(history.history['val_accuracy'])
+model.save("CHATBOT")
+model.load_weights("CHATBOT")
+pred_res = model.predict((inputs_test,Queries_test))
+story = ' '.join(word for word in test_data[0][0])
+Query = ' '.join(word for word in test_data[0][1])
+val_max = np.argmax(pred_res[0])
+
+for key , val in tokenizer.word_index.items():
+    if val == val_max:
+        k = key
+        
+print("predicted ans is",k)
+print(" probability of certainity", pred_res[0][val_max])
+story = "Mary dropped the football . Daniel journeyed to the office . "
+story.split()
+my_ques = "Is Mary dropped the football ?"
+my_ques.split()
+mydata = [(story.split(),my_ques.split(),'no')]
+my_story,my_quest,my_ans = Vectorised_Data(mydata)
+pred_res = model.predict((my_story,my_quest))
+val_max = np.argmax(pred_res[0])
+
+for key , val in tokenizer.word_index.items():
+    if val == val_max:
+        k = key
+        
+print("predicted ans is",k)
+print(" probability of certainity", pred_res[0][val_max])
+
+
+
+
+
+
